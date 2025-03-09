@@ -5,6 +5,8 @@
 
 #include "lwip/apps/fs.h"
 
+#include "dhcpserver.h"
+
 #include "CGI.h"
 #include "SSI.h"
 
@@ -13,10 +15,10 @@ char * password = NULL;
 
 bool wifi_connected = false;
 
-bool ConnectToWifi(const char * userSsid, const char * userPassword)
+bool ConnectToWifi(const char * user_ssid, const char * user_password)
 {
     printf("Connecting to Wi-Fi...\n");
-    if (cyw43_arch_wifi_connect_timeout_ms(userSsid, userPassword, CYW43_AUTH_WPA2_AES_PSK, 10000)) 
+    if (cyw43_arch_wifi_connect_timeout_ms(user_ssid, user_password, CYW43_AUTH_WPA2_AES_PSK, 10000)) 
     {
         printf("Failed to connect to Wi-Fi\n");
         return false;
@@ -36,29 +38,29 @@ const char* ConnectWiFiCGIHandler(int iIndex, int iNumParams, char *pcParam[], c
     operation_in_progress = true;
     printf("WiFi Connection Request:\n");
 
-    char * userSsid = NULL;
-    char * userPassword = NULL;
+    char * user_ssid = NULL;
+    char * user_password = NULL;
 
     for (int i = 0; i < iNumParams; i++) 
     {
         if (strcmp(pcParam[i], "ssid") == 0) 
         {
-            userSsid = UrlDecode(pcValue[i]);
+            user_ssid = UrlDecode(pcValue[i]);
         } 
         else if (strcmp(pcParam[i], "password") == 0) 
         {
-            userPassword = UrlDecode(pcValue[i]);
+            user_password = UrlDecode(pcValue[i]);
         }
     }
 
     const char* returnPage = "/error.json";
     
-    if (userSsid && userPassword) 
+    if (user_ssid && user_password) 
     {
         cyw43_arch_enable_sta_mode();
-        printf("Attempting to connect to SSID: %s, %s\n", userSsid, userPassword);
+        printf("Attempting to connect to SSID: %s, %s\n", user_ssid, user_password);
 
-        bool connected = ConnectToWifi(userSsid, userPassword);
+        bool connected = ConnectToWifi(user_ssid, user_password);
         cyw43_wifi_leave(&cyw43_state, CYW43_ITF_STA);
 
         if(connected)
@@ -67,10 +69,10 @@ const char* ConnectWiFiCGIHandler(int iIndex, int iNumParams, char *pcParam[], c
             returnPage = "/success.json";
             wifi_connected = true;
 
-            ssid = (char*)malloc(strlen(userSsid) + 1);
-            strcpy(ssid, userSsid);
-            password = (char*)malloc(strlen(userPassword) + 1);
-            strcpy(password, userPassword);
+            ssid = (char*)malloc(strlen(user_ssid) + 1);
+            strcpy(ssid, user_ssid);
+            password = (char*)malloc(strlen(user_password) + 1);
+            strcpy(password, user_password);
         }
     } 
     else
@@ -78,13 +80,13 @@ const char* ConnectWiFiCGIHandler(int iIndex, int iNumParams, char *pcParam[], c
         printf("Invalid parameters\n");
     } 
 
-    if(userSsid)
+    if(user_ssid)
     {
-        free(userSsid);
+        free(user_ssid);
     }
-    if(userPassword)
+    if(user_password)
     {
-        free(userPassword);
+        free(user_password);
     }
 
     printf("returnPage is %s\n", returnPage);
@@ -110,6 +112,9 @@ int main()
 
     // Set up access point
     cyw43_arch_enable_ap_mode(WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK);
+    cyw43_wifi_ap_set_channel(&cyw43_state, 1); // Set channel
+    cyw43_state.ap_tx_power = 20; // Set transmit power to 20 dBm
+
     bool ap_mode_enabled = true; 
     // Print AP info
     printf("Access Point active. SSID: %s, Password: %s\n", WIFI_SSID, WIFI_PASSWORD);
@@ -126,6 +131,9 @@ int main()
 
     // Apply the new configuration
     netif_set_addr(netif_default, &ip, &netmask, &gateway);
+
+    dhcp_server_t dhcp_server;
+    dhcp_server_init(&dhcp_server, &ip, &netmask);
 
     // Main loop
     while(1)
@@ -147,7 +155,15 @@ int main()
                 printf("disabling ap mode\n");
                 cyw43_arch_disable_ap_mode();
                 ap_mode_enabled = false;
-                ConnectToWifi(ssid, password);
+                wifi_connected = false;
+                int retries = 3;
+                while(!wifi_connected && retries > 0)
+                {
+                    wifi_connected = ConnectToWifi(ssid, password);
+                    retries--;
+                }
+                ip4_addr_t ip = cyw43_state.netif->ip_addr;
+                printf("RPI IP Address: %s\n", ip4addr_ntoa(&ip));
             }
         }
     }

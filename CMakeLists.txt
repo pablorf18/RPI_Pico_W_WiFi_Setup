@@ -34,6 +34,7 @@ pico_sdk_init()
 
 add_subdirectory(WifiScanner)
 add_subdirectory(WebHandlers)
+add_subdirectory(dhcpserver)
 
 add_executable(${PROGRAM_NAME}
     main.cpp
@@ -60,6 +61,7 @@ target_include_directories(${PROGRAM_NAME} PRIVATE
 target_link_libraries(${PROGRAM_NAME}
     wifi_scanner
     web_handlers
+    dhcp_server
     pico_stdlib
     pico_cyw43_arch_lwip_poll
     pico_lwip_http
